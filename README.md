@@ -4,7 +4,7 @@ This [Home Assistant](https://www.home-assistant.io/) custom component
 uses supported smart thermostatic radiator valves (TRVs) to directly
 control their absolute valve position (i.e. 0%-100%).
 
-The main goals are:
+The main features are:
 * Vendor and platform independence - mix TRVs from Homematic or Eurotronic
   with room temperature sensors from e.g Aqara (Zigbee)
 * Minimize valve adjustments to save battery live
