@@ -1,0 +1,9 @@
+{
+    "domain": "valves",
+    "name": "Valves",
+    "version": "0.1.0",
+    "documentation": "none",
+    "dependencies": [],
+    "codeowners": [],
+    "requirements": []
+}
