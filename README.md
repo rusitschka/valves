@@ -5,8 +5,8 @@ uses supported smart thermostatic radiator valves (TRVs) to directly
 control their absolute valve position (i.e. 0%-100%).
 
 The main goals are:
-* Vendor and platform independance - mix TRVs from Homematic or Eurotronic
-  with room temperarture sensors from e.g Aqara (Zigbee)
+* Vendor and platform independence - mix TRVs from Homematic or Eurotronic
+  with room temperature sensors from e.g Aqara (Zigbee)
 * Minimize valve adjustments to save battery live
 * Minimize manual tweaking by using a machine learning algorithm to
   detect and adapt room and valve properties
