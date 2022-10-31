@@ -6,12 +6,14 @@ from homeassistant.core import HomeAssistant
 
 from .valve_actuator_eurotronic import ValveActuatorEurotronic
 from .valve_actuator_homematic import ValveActuatorHomematic
+from .valve_actuator_shelly import ValveActuatorShelly
 
 class ValveActuatorProxy:
 
-    def __init__(self, home_assistant:HomeAssistant, entity_name:str):
+    def __init__(self, home_assistant:HomeAssistant, valve_config:dict):
         self._home_assistant = home_assistant
-        self._entity_name = entity_name
+        self._valve_config = valve_config
+        self._entity_name = valve_config["id"]
         self._valve_actuator = None
 
     @property
@@ -53,8 +55,11 @@ class ValveActuatorProxy:
         if self._valve_actuator is None:
             if self.entity_attribute("eurotronic_system_mode") is not None:
                 self._valve_actuator = ValveActuatorEurotronic(
-                        self._home_assistant, self._entity_name)
+                        self._home_assistant, self._valve_config)
             elif self.entity_attribute("interface") == "rf":
                 self._valve_actuator = ValveActuatorHomematic(
-                        self._home_assistant, self._entity_name)
+                        self._home_assistant, self._valve_config)
+            elif self.entity_attribute("target_temp_step") is not None:
+                self._valve_actuator = ValveActuatorShelly(
+                        self._home_assistant, self._valve_config)
         return self._valve_actuator

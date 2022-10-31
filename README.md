@@ -5,8 +5,8 @@ uses supported smart thermostatic radiator valves (TRVs) to directly
 control their absolute valve position (i.e. 0%-100%).
 
 The main features are:
-* Vendor and platform independence - mix TRVs from Homematic or Eurotronic
-  with room temperature sensors from e.g Aqara (Zigbee)
+* Vendor and platform independence - mix TRVs from Shelly, Homematic,
+  or Eurotronic with room temperature sensors from e.g Aqara (Zigbee)
 * Minimize valve adjustments to save battery live
 * Minimize manual tweaking by using a machine learning algorithm to
   detect and adapt room and valve properties
@@ -51,6 +51,16 @@ have it's specified target temperature.
 
 It's **important to note** that all entity IDs specfied in the `valves`
 config need to be setup already in Home Assistant.
+
+## Support for Shelly TRV
+Shelly TRV has a separate Home Assistant entity for the valve position
+which has to be configured in `valves` config:
+
+```
+  - id: climate.shellytrv_kitchen
+    valve_position: number.shellytrv_kitchen_valve_position
+    thermostat_sensor: climate.kitchenthermostat
+```
 
 ## Support for Thermostats without Target Temperature
 You can use simple temperature sensors to measure the room temperature.

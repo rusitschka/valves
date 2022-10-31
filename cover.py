@@ -43,25 +43,26 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
 
 class ValveCover(CoverEntity, RestoreEntity):
 
-    def __init__(self, home_assistant:HomeAssistant, valves_queue:ValvesQueue, valve_entity:dict):
+    def __init__(self, home_assistant:HomeAssistant, valves_queue:ValvesQueue, valve_config:dict):
         self._home_assistant = home_assistant
         self._valves_queue = valves_queue
-        self._name = valve_entity["id"]
+        self._valve_config = valve_config
+        self._name = valve_config["id"]
 
         self._position = 0
         # Kp=1.5 was ok without sweet_spot multiply, try 1.5/15 = 0.1
         # 0.1 was ok, but a bit too high
-        self._position_factor = float(valve_entity.get("position_factor", 0.07)) # Kp
+        self._position_factor = float(valve_config.get("position_factor", 0.07)) # Kp
         self._update_interval = 15 * 60.0 + random.randint(-60, 60) # randomly splay 2 minutes
 
-        self._thermostat_sensor_id = valve_entity["thermostat_sensor"]
-        self._peer_id = valve_entity.get("peer_id", None)
-        self._settemp_input = valve_entity.get("settemp_input", None)
-        self._window_sensor_id = valve_entity.get("window_sensor", None)
-        self._min_position = valve_entity.get("min_position", 0)
-        self._max_position = valve_entity.get("max_position", 80)
-        self._thermostat_inertia = float(valve_entity.get("thermostat_inertia", 60))
-        self._valve_inertia = float(valve_entity.get("valve_inertia", 60))
+        self._thermostat_sensor_id = valve_config["thermostat_sensor"]
+        self._peer_id = valve_config.get("peer_id", None)
+        self._settemp_input = valve_config.get("settemp_input", None)
+        self._window_sensor_id = valve_config.get("window_sensor", None)
+        self._min_position = valve_config.get("min_position", 0)
+        self._max_position = valve_config.get("max_position", 80)
+        self._thermostat_inertia = float(valve_config.get("thermostat_inertia", 60))
+        self._valve_inertia = float(valve_config.get("valve_inertia", 60))
         self._raw_position = -1
         self._raw_position_changed_at = utcnow()
         self._target_temperature = -1.0
@@ -110,7 +111,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._temperature_sensor = TemperatureSensor(
                 self._home_assistant, self._thermostat_sensor_id)
         self._valve_actuator = ValveActuatorProxy(
-                self._home_assistant, self._name)
+                self._home_assistant, self._valve_config)
 
         await super().async_added_to_hass()
 

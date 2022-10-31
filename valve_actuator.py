@@ -1,10 +1,16 @@
 
 from typing import Union
 
+from homeassistant.core import HomeAssistant
+
 from .cached_entity_wrapper import CachedEntityWrapper
 from .const import LOGGER
 
 class ValveActuator(CachedEntityWrapper):
+    def __init__(self, home_assistant:HomeAssistant, valve_config:dict):
+        super().__init__(home_assistant, valve_config["id"])
+        self._valve_config = valve_config
+
     @property
     def stripped_entity_name(self):
         stripped_entity_name = self.entity_name
