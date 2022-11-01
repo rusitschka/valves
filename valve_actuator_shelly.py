@@ -24,7 +24,10 @@ class ValveActuatorShelly(ValveActuator):
         valve_position_id = self._valve_config.get("valve_position", None)
         if valve_position_id is None:
             raise ValueError("valve_position missing in config!")
-        self._home_assistant.states.set(valve_position_id, str(value))
+        self._home_assistant.services.call("number", "set_value", {
+            'entity_id': valve_position_id,
+            'value': value
+        })
 
     def normalize_valve_state(self) -> bool:
         # Nothing to normalize for Shelly
