@@ -1,4 +1,6 @@
 
+import asyncio
+
 from datetime import datetime
 from collections import OrderedDict
 
@@ -32,9 +34,9 @@ class ValvesQueue:
             "urgent": urgent
         }
         self.update_state()
-        self.process_queue()
+        asyncio.run_coroutine_threadsafe(self.async_process_queue(), self._hass.loop)
 
-    def process_queue(self, now=None) -> None:
+    async def async_process_queue(self, now=None) -> None:
         # Get rid of "pylint unused argument warning"
         _ = (now)
 
@@ -54,9 +56,18 @@ class ValvesQueue:
         value = int(entry["value"])
         urgent = bool(entry["urgent"])
         self.update_state()
-        valve_actuator.set_valve_position(value, urgent)
-        LOGGER.info("%s set to %d via queue. Queue size=%d",
-                valve_actuator.entity_name, value, self.queue_size)
+        try:
+            result = await valve_actuator.async_set_valve_position(value, urgent)
+        except Exception as exception:
+            LOGGER.error(exception)
+            result = False
+        if result:
+            LOGGER.info("%s set to %d via queue. Queue size=%d",
+                    valve_actuator.entity_name, value, self.queue_size)
+        else:
+            LOGGER.warning("Failed to set %s to %d via queue. Rescheduling. Queue size=%d",
+                    valve_actuator.entity_name, value, self.queue_size)
+            self._queue[valve_actuator.entity_name] = entry
 
     @property
     def duty_cycle_too_high(self):

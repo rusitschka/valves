@@ -15,7 +15,7 @@ class ValveActuatorHomematic(ValveActuator):
         valve_position = self.entity_attribute("valve")
         return None if valve_position is None else float(valve_position)
 
-    def set_valve_position(self, value:float, urgent:bool):
+    async def async_set_valve_position(self, value:float, urgent:bool) -> bool:
         data = {
             "interface": self.entity_attribute("interface"),
             "address": self.entity_attribute("id"),
@@ -25,7 +25,11 @@ class ValveActuatorHomematic(ValveActuator):
             },
             "rx_mode": "BURST" if urgent else "WAKEUP"
         }
-        self._home_assistant.services.call("homematic", "put_paramset", data)
+        return await self._home_assistant.services.async_call(
+                "homematic",
+                "put_paramset",
+                data,
+                blocking=True)
 
     def normalize_valve_state(self) -> bool:
         if not self.available:

@@ -27,7 +27,7 @@ class ValveActuator(CachedEntityWrapper):
     def valve_position(self) -> Union[float, None]:
         raise NotImplementedError()
 
-    def set_valve_position(self, value:float, urgent:bool):
+    async def async_set_valve_position(self, value:float, urgent:bool) -> bool:
         raise NotImplementedError()
 
     def normalize_valve_state(self) -> bool:

@@ -46,10 +46,12 @@ class ValveActuatorProxy:
         valve_actuator = self.__get_valve_actuator()
         return False if valve_actuator is None else valve_actuator.normalize_valve_state()
 
-    def set_valve_position(self, value:float, urgent:bool):
+    async def async_set_valve_position(self, value:float, urgent:bool) -> bool:
         valve_actuator = self.__get_valve_actuator()
         if valve_actuator is not None:
-            valve_actuator.set_valve_position(value, urgent)
+            return await valve_actuator.async_set_valve_position(value, urgent)
+        else:
+            return False
 
     def __get_valve_actuator(self):
         if self._valve_actuator is None:

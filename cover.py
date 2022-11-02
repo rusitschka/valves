@@ -31,7 +31,7 @@ from .valves_queue import ValvesQueue
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     valves_queue = ValvesQueue(hass)
-    async_track_time_interval(hass, valves_queue.process_queue, QUEUE_INTERVAL_TIMEDELTA)
+    async_track_time_interval(hass, valves_queue.async_process_queue, QUEUE_INTERVAL_TIMEDELTA)
 
     LOGGER.info("config=%s", config)
     LOGGER.info("discovery_info=%s", discovery_info)

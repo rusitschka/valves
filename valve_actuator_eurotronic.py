@@ -19,13 +19,13 @@ class ValveActuatorEurotronic(ValveActuator):
         #    valve_position = int(valve_position) * 100 / 255
         return None if valve_position is None else float(valve_position)
 
-    def set_valve_position(self, value:float, urgent:bool):
-        self._home_assistant.services.call("mqtt", "publish", {
+    async def async_set_valve_position(self, value:float, urgent:bool) -> bool:
+        return await self._home_assistant.services.async_call("mqtt", "publish", {
             'topic': f"zigbee2mqtt/{self.stripped_entity_name}/set/eurotronic_valve_position",
             'payload': int(value * 255 / 100)
             #'topic': "zigbee2mqtt/%s/set" % self.stripped_entity_name,
             #'payload': "{\"valve_position\": %s}" % int(value * 255 / 100)
-        })
+        }, blocking=True)
 
     def normalize_valve_state(self) -> bool:
         if not self.available:
