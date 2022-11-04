@@ -58,7 +58,7 @@ class ValvesQueue:
         self.update_state()
         try:
             result = await valve_actuator.async_set_valve_position(value, urgent)
-        except Exception as exception:
+        except Exception as exception:  # pylint: disable=broad-except
             LOGGER.error(exception)
             result = False
         if result:

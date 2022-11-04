@@ -80,7 +80,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._window_open_until = None
         self._window_open_saved_position = -1.0
         self._valve_position_before_boost_mode = -1.0
-        self._sweet_spot = 10.0
+        self._sweet_spot = DEFAULT_SWEET_SPOT
         self._sweet_spot_blocked_until = utcnow()
         self._reset_boost_mode_at = utcnow() - timedelta(hours=1)
         self._temperature_sensor = None
@@ -185,15 +185,15 @@ class ValveCover(CoverEntity, RestoreEntity):
         if raw_position == self._raw_position:
             if (abs(raw_position - math.ceil(self._position) > 10)
                     and utcnow() > self._raw_position_changed_at + timedelta(minutes=45)):
-                LOGGER.info("%s: Position changed to %d because it differs too much from %d",
+                LOGGER.info("%s: Position changed to %.1f because it differs too much from %.1f",
                         self._name, raw_position, self._position)
                 self._position = raw_position
         else:
             if raw_position == math.ceil(self._position):
-                LOGGER.info("%s: Position changed from %d to %d",
+                LOGGER.info("%s: Position changed from %.1f to %.1f",
                         self._name, self._raw_position, raw_position)
             else:
-                LOGGER.info("%s: Position changed by third party from %d to %d",
+                LOGGER.info("%s: Position changed by third party from %.1f to %.1f",
                         self._name, self._raw_position, raw_position)
                 self._position = raw_position
             self._raw_position = raw_position
@@ -203,7 +203,7 @@ class ValveCover(CoverEntity, RestoreEntity):
 
         # eurotronic has bug - try to work-around
         if self._valve_actuator.value < 5.0:
-            LOGGER.info("%s skipping update: Has strange temp %f",
+            LOGGER.info("%s skipping update: Has strange temp %.1f",
                     self._name, self._valve_actuator.value)
             return
 
