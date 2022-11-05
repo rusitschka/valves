@@ -21,6 +21,10 @@ class ValveActuatorProxy:
         return self._entity_name
 
     @property
+    def type(self) -> str:
+        return self._valve_config.get("type", "auto")
+
+    @property
     def entity(self):
         return self._home_assistant.states.get(self._entity_name)
 
@@ -55,13 +59,15 @@ class ValveActuatorProxy:
 
     def __get_valve_actuator(self):
         if self._valve_actuator is None:
-            if self.entity_attribute("eurotronic_system_mode") is not None:
+            if (self.type == "auto" and self.entity_attribute("eurotronic_system_mode") is not None
+                    or self.type == "eurotronic"):
                 self._valve_actuator = ValveActuatorEurotronic(
                         self._home_assistant, self._valve_config)
-            elif self.entity_attribute("interface") == "rf":
+            elif (self.type == "auto" and self.entity_attribute("interface") == "rf"
+                    or self.type == "homematic"):
                 self._valve_actuator = ValveActuatorHomematic(
                         self._home_assistant, self._valve_config)
-            elif self.entity_attribute("target_temp_step") is not None:
+            elif self.type == "shelly":
                 self._valve_actuator = ValveActuatorShelly(
                         self._home_assistant, self._valve_config)
         return self._valve_actuator

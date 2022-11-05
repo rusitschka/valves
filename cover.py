@@ -311,7 +311,7 @@ class ValveCover(CoverEntity, RestoreEntity):
             combined_fitness = max(
                     0.5,
                     1.0 - abs(self._thermostat_history.slope) - abs(self._real_error))
-            learn_weight = 0.00003 * self._update_interval * combined_fitness
+            learn_weight = 0.00005 * self._update_interval * combined_fitness
 
             sweet_spot_learn_weight = learn_weight
             self._sweet_spot = (
