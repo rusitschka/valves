@@ -77,6 +77,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._next_temp_adjust_at = utcnow()
         self._last_valve_adjust_at = utcnow() - timedelta(seconds=self._update_interval / 2)
         self._last_target_temperature_changed_at = utcnow() - timedelta(hours=2)
+        self._heating_until_target_temperature = False
         self._window_open_until = None
         self._window_open_saved_position = -1.0
         self._valve_position_before_boost_mode = -1.0
@@ -106,6 +107,12 @@ class ValveCover(CoverEntity, RestoreEntity):
             LOGGER.info("%s: Restored sweet_spot to %.3f", self._name, self._sweet_spot)
         else:
             self._sweet_spot = DEFAULT_SWEET_SPOT
+
+        if last_state and 'heating_until_target_temperature' in last_state.attributes:
+            self._heating_until_target_temperature = last_state.attributes['heating_until_target_temperature']
+            LOGGER.info("%s: Restored heating_until_target_temperature to %r", self._name, self._heating_until_target_temperature)
+        else:
+            self._heating_until_target_temperature = False
 
         self._raw_position = math.ceil(self._position)
         self._temperature_sensor = TemperatureSensor(
@@ -154,17 +161,18 @@ class ValveCover(CoverEntity, RestoreEntity):
             return {}
 
         attributes = {
+            "error_exp": round(self._error_exp, 3),
+            "error": round(self._error, 3),
+            "felt_temp_delta": round(self._felt_temp_delta, 3),
+            "felt_temp": round(self._felt_temp, 3),
+            "heating_until_target_temperature": self._heating_until_target_temperature,
+            "next_temp_adjust_at": as_local(self._next_temp_adjust_at).strftime("%H:%M:%S"),
             "position": round(self._position, 2),
             "raw_position": round(self._raw_position, 2),
-            "felt_temp": round(self._felt_temp, 3),
-            "felt_temp_delta": round(self._felt_temp_delta, 3),
-            "error": round(self._error, 3),
-            "error_exp": round(self._error_exp, 3),
             "real_error": self._real_error,
             "sweet_spot": round(self._sweet_spot, 3),
             "thermostat_slope": round(self._thermostat_history.slope, 3),
-            "valve_slope": round(self._valve_history.slope, 3),
-            "next_temp_adjust_at": as_local(self._next_temp_adjust_at).strftime("%H:%M:%S")
+            "valve_slope": round(self._valve_history.slope, 3)
         }
         return attributes
 
@@ -291,7 +299,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         else:
             target_temperature = self._temperature_sensor.entity_attribute("temperature")
         temperature_adjust_sensor = self._home_assistant.states.get("sensor.temperature_adjust")
-        if temperature_adjust_sensor:
+        if temperature_adjust_sensor and temperature_adjust_sensor.state.isnumeric():
             target_temperature = target_temperature + float(temperature_adjust_sensor.state)
         if (self._target_temperature >= 0 and
                 abs(self._target_temperature - target_temperature) >= 0.5):
@@ -353,10 +361,30 @@ class ValveCover(CoverEntity, RestoreEntity):
         #         LOGGER.info("%s: Average sweet spot: %.3f", self._name, average_sweet_spot)
 
         valve_pos = self._position
+        new_valve_pos = -1.0
         if self._target_temperature_changed:
-            self._target_temperature_changed = False
             new_valve_pos = valve_pos - 2.0 * self._error * self._sweet_spot
-        else:
+
+        # If it's colder than 0.5 degress from target temperature, enable
+        # heating_until_target_temperature
+        if (self._temperature_sensor.value < self._target_temperature - 0.5
+                and not self._heating_until_target_temperature):
+            LOGGER.info("%s: Start heating to target temperature.",
+                    self.name)
+            self._heating_until_target_temperature = True
+        elif (self._temperature_sensor.value >= self._target_temperature
+                and self._heating_until_target_temperature):
+            self._heating_until_target_temperature = False
+            if self._raw_position > self._sweet_spot:
+                LOGGER.info("%s: Reached target temperature after heating. Going to sweet spot %.2f.",
+                        self.name, self._sweet_spot)
+                new_valve_pos = self._sweet_spot
+            else:
+                LOGGER.info("%s: Reached target temperature after heating but position below sweet spot - performing standard adjust.",
+                        self.name)
+
+        # If new_valve_pos was not yet set by a special case perform standard adjust
+        if new_valve_pos < 0.0:
             #valve_delta = float(-self._error_exp * self._position_factor * self._sweet_spot)
             valve_delta = float(-self._error_exp * self._position_factor * average_sweet_spot)
             # put valve delta on a logarithmic scale: valve_pos 0=>1, 20=>2
@@ -366,13 +394,23 @@ class ValveCover(CoverEntity, RestoreEntity):
         adaptive_max_position = max(10.0, min(self._max_position, self._sweet_spot * 2.0))
         new_valve_pos = min(adaptive_max_position, max(self._min_position, new_valve_pos))
         # if coming from position 0 directly jump to ratio of sweet spot depending on slope
-        if self._position == 0 and new_valve_pos > 0 and self._thermostat_history.slope < 0:
+        if (not self._target_temperature_changed
+                and self._position == 0
+                and new_valve_pos > 0
+                and self._thermostat_history.slope < 0):
             # slope factor 1.0 was a too agressive (esp. during night)
             slope_factor = 0.75
             new_valve_pos = max(
                     new_valve_pos,
                     self._sweet_spot * slope_factor * -self._thermostat_history.slope)
+            #new_valve_pos = self._sweet_spot
+            LOGGER.info("%s: Turning on from position 0. Directly go to %.2f.",
+                    self.name, new_valve_pos)
+
         valve_pos_changes = math.ceil(new_valve_pos) != self._raw_position
+
+        # Reset _target_temperature_changed
+        self._target_temperature_changed = False
 
         self._position = new_valve_pos
         if valve_pos_changes:
