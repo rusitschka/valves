@@ -299,8 +299,10 @@ class ValveCover(CoverEntity, RestoreEntity):
         else:
             target_temperature = self._temperature_sensor.entity_attribute("temperature")
         temperature_adjust_sensor = self._home_assistant.states.get("sensor.temperature_adjust")
-        if temperature_adjust_sensor and temperature_adjust_sensor.state.isnumeric():
+        try:
             target_temperature = target_temperature + float(temperature_adjust_sensor.state)
+        except ValueError:
+            LOGGER.warning("%s: target_temperature not a float", self._name)
         if (self._target_temperature >= 0 and
                 abs(self._target_temperature - target_temperature) >= 0.5):
             self._last_valve_adjust_at = utcnow() - timedelta(seconds=self._update_interval)
