@@ -287,11 +287,17 @@ class ValveCover(CoverEntity, RestoreEntity):
             return self._home_assistant.states.get(self.entity_id_to_cover_id(self._peer_id))
 
     @property
-    def window_entity(self):
+    def window_entities(self):
         if self._window_sensor_id is None:
-            return None
+            return []
         else:
-            return self._home_assistant.states.get(self._window_sensor_id)
+            window_sensor_ids = self._window_sensor_id
+            if not isinstance(window_sensor_ids, list):
+                window_sensor_ids = [ window_sensor_ids ]
+            entities = []
+            for window_sensor_id in window_sensor_ids:
+                entities.append(self._home_assistant.states.get(window_sensor_id))
+            return entities
 
     def update_target_temperature(self) -> None:
         if self._settemp_input is not None:
@@ -434,15 +440,16 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._valves_queue.set_valve(self._valve_actuator, valve_pos, urgent)
 
     def update_window_open(self) -> bool:
-        window_entity = self.window_entity
-        window_entity_is_longer_open = (
-            window_entity is not None
-            and window_entity.state == "on"
-            and utcnow() - window_entity.last_changed >= timedelta(minutes=2))
+        window_entities_longer_open = False
+        for window_entity in self.window_entities:
+            window_entities_longer_open = window_entities_longer_open or (
+                window_entity is not None
+                and window_entity.state == "on"
+                and utcnow() - window_entity.last_changed >= timedelta(minutes=2))
         #LOGGER.info("%s: window_entity_is_longer_open = %r",
         #       self.name, window_entity_is_longer_open)
         #if window_entity_is_longer_open:
-        if self._valve_history.slope < -10.0 or window_entity_is_longer_open:
+        if self._valve_history.slope < -10.0 or window_entities_longer_open:
             self._window_open_until = utcnow() + timedelta(minutes=10)
             self._sweet_spot_blocked_until = utcnow() + timedelta(hours=2)
             if self._window_open_saved_position < 0:
