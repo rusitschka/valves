@@ -1,8 +1,10 @@
+import copy
+import json
 import math
 import random
 
 from datetime import timedelta
-from typing import Any, Dict
+from typing import Any, Union
 
 from homeassistant.components.cover import (
     ATTR_POSITION,
@@ -20,10 +22,12 @@ from .const import (
     DEFAULT_FELT_TEMP_DELTA,
     DEFAULT_POSITION,
     DEFAULT_SWEET_SPOT,
+    DELAY_LEARN_AFTER_TEMPERATURE_CHANGE,
     LOGGER,
     UPDATE_INTERVAL_TIMEDELTA,
     QUEUE_INTERVAL_TIMEDELTA
 )
+from .target_temperature_config import TargetTemperaturConfig
 from .temperature_history import TemperatureHistory
 from .temperature_sensor import TemperatureSensor
 from .valve_actuator_proxy import ValveActuatorProxy
@@ -67,8 +71,8 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._raw_position_changed_at = utcnow()
         self._target_temperature = -1.0
         self._target_temperature_changed = False
+        self._target_temperature_configs: dict[float, TargetTemperaturConfig] = {}
         self._felt_temp = -1.0
-        self._felt_temp_delta = 0.0
         self._real_error = -1.0
         self._error = -1.0
         self._error_exp = -1.0
@@ -76,12 +80,11 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._valve_history = TemperatureHistory(timedelta(minutes=10))
         self._next_temp_adjust_at = utcnow()
         self._last_valve_adjust_at = utcnow() - timedelta(seconds=self._update_interval / 2)
-        self._last_target_temperature_changed_at = utcnow() - timedelta(hours=2)
+        self._last_target_temperature_changed_at = utcnow() - DELAY_LEARN_AFTER_TEMPERATURE_CHANGE
         self._heating_until_target_temperature = False
         self._window_open_until = None
         self._window_open_saved_position = -1.0
         self._valve_position_before_boost_mode = -1.0
-        self._sweet_spot = DEFAULT_SWEET_SPOT
         self._sweet_spot_blocked_until = utcnow()
         self._reset_boost_mode_at = utcnow() - timedelta(hours=1)
         self._temperature_sensor = None
@@ -90,11 +93,16 @@ class ValveCover(CoverEntity, RestoreEntity):
 
     async def async_added_to_hass(self) -> None:
         last_state = await self.async_get_last_state()
-        if last_state and 'felt_temp_delta' in last_state.attributes:
-            self._felt_temp_delta = last_state.attributes['felt_temp_delta']
-            LOGGER.info("%s: Restored felt_temp_delta to %.3f", self._name, self._felt_temp_delta)
-        else:
-            self._felt_temp_delta = DEFAULT_FELT_TEMP_DELTA
+        if last_state and 'target_temperature_configs' in last_state.attributes:
+            target_temperature_configs_string = last_state.attributes['target_temperature_configs']
+            items = json.loads(target_temperature_configs_string).items()
+            for target_temperature, target_temperature_config_json in items:
+                target_temperature = float(target_temperature)
+                target_temperature_config = TargetTemperaturConfig()
+                target_temperature_config.from_json(target_temperature_config_json)
+                self._target_temperature_configs[target_temperature] = target_temperature_config
+            LOGGER.info("%s: Restored target_temperature_configs from %s",
+                    self._name, target_temperature_configs_string)
 
         if last_state and 'position' in last_state.attributes:
             self._position = last_state.attributes['position']
@@ -102,15 +110,11 @@ class ValveCover(CoverEntity, RestoreEntity):
         else:
             self._position = DEFAULT_POSITION
 
-        if last_state and 'sweet_spot' in last_state.attributes:
-            self._sweet_spot = last_state.attributes['sweet_spot']
-            LOGGER.info("%s: Restored sweet_spot to %.3f", self._name, self._sweet_spot)
-        else:
-            self._sweet_spot = DEFAULT_SWEET_SPOT
-
         if last_state and 'heating_until_target_temperature' in last_state.attributes:
-            self._heating_until_target_temperature = last_state.attributes['heating_until_target_temperature']
-            LOGGER.info("%s: Restored heating_until_target_temperature to %r", self._name, self._heating_until_target_temperature)
+            self._heating_until_target_temperature = \
+                    last_state.attributes['heating_until_target_temperature']
+            LOGGER.info("%s: Restored heating_until_target_temperature to %r",
+                    self._name, self._heating_until_target_temperature)
         else:
             self._heating_until_target_temperature = False
 
@@ -122,6 +126,56 @@ class ValveCover(CoverEntity, RestoreEntity):
 
         await super().async_added_to_hass()
 
+    @property
+    def felt_temp_delta(self):
+        best_target_temperature_config = self.find_best_target_temperature_config()
+        if best_target_temperature_config is None:
+            return DEFAULT_FELT_TEMP_DELTA
+        else:
+            return best_target_temperature_config.felt_temp_delta
+
+    @felt_temp_delta.setter
+    def felt_temp_delta(self, value):
+        target_temperature_config = self.find_or_initialize_target_temperature_config()
+        target_temperature_config.felt_temp_delta = value
+
+    @property
+    def sweet_spot(self):
+        best_target_temperature_config = self.find_best_target_temperature_config()
+        if best_target_temperature_config is None:
+            return DEFAULT_SWEET_SPOT
+        else:
+            return best_target_temperature_config.sweet_spot
+
+    @sweet_spot.setter
+    def sweet_spot(self, value):
+        target_temperature_config = self.find_or_initialize_target_temperature_config()
+        target_temperature_config.sweet_spot = value
+
+    def find_best_target_temperature_config(self) -> Union[TargetTemperaturConfig, None]:
+        best_target_temperature_delta = 100.0
+        best_target_temperature_config = None
+        adjusted_target_temperatue = self.get_adjusted_target_temperature()
+        items = self._target_temperature_configs.items()
+        for target_temperature, target_temperature_config in items:
+            target_temperature_delta = abs(target_temperature - adjusted_target_temperatue)
+            if best_target_temperature_delta > target_temperature_delta:
+                best_target_temperature_delta = target_temperature_delta
+                best_target_temperature_config = target_temperature_config
+        return best_target_temperature_config
+
+    def find_or_initialize_target_temperature_config(self) -> TargetTemperaturConfig:
+        adjusted_target_temperatue = self.get_adjusted_target_temperature()
+        target_temperature_config = self._target_temperature_configs.get(
+                adjusted_target_temperatue, None)
+        if target_temperature_config is None:
+            best_target_temperature_config = self.find_best_target_temperature_config()
+            if best_target_temperature_config is None:
+                target_temperature_config = TargetTemperaturConfig()
+            else:
+                target_temperature_config = copy.deepcopy(best_target_temperature_config)
+            self._target_temperature_configs[adjusted_target_temperatue] = target_temperature_config
+        return target_temperature_config
 
     @property
     def supported_features(self):
@@ -156,21 +210,30 @@ class ValveCover(CoverEntity, RestoreEntity):
         return self.current_cover_position
 
     @property
-    def extra_state_attributes(self) -> Dict[str, Any]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         if not self._updated:
             return {}
+
+        target_temperature_configs_json :dict[str, dict] = {}
+        items =  self._target_temperature_configs.items()
+        for target_temperature, target_temperature_config in items:
+            target_temperature_configs_json[str(target_temperature)] = \
+                    target_temperature_config.to_json()
+        target_temperature_configs_str = json.dumps(
+                target_temperature_configs_json, indent=2, sort_keys=True)
 
         attributes = {
             "error_exp": round(self._error_exp, 3),
             "error": round(self._error, 3),
-            "felt_temp_delta": round(self._felt_temp_delta, 3),
+            "felt_temp_delta": round(self.felt_temp_delta, 3),
             "felt_temp": round(self._felt_temp, 3),
             "heating_until_target_temperature": self._heating_until_target_temperature,
             "next_temp_adjust_at": as_local(self._next_temp_adjust_at).strftime("%H:%M:%S"),
             "position": round(self._position, 2),
             "raw_position": round(self._raw_position, 2),
             "real_error": self._real_error,
-            "sweet_spot": round(self._sweet_spot, 3),
+            "sweet_spot": round(self.sweet_spot, 3),
+            "target_temperature_configs": target_temperature_configs_str,
             "thermostat_slope": round(self._thermostat_history.slope, 3),
             "valve_slope": round(self._valve_history.slope, 3)
         }
@@ -223,7 +286,7 @@ class ValveCover(CoverEntity, RestoreEntity):
             self._temperature_sensor.value * felt_ratio
             + self._valve_actuator.value * (1.0 - felt_ratio))
         #average_felt_temp = self._felt_temp
-        adjusted_felt_temp_delta = self._felt_temp_delta
+        adjusted_felt_temp_delta = self.felt_temp_delta
         peer_entity = self.peer_entity
         # if peer_entity is not None:
         #     peer_felt_temp = peer_entity.attributes.get("felt_temp")
@@ -233,13 +296,13 @@ class ValveCover(CoverEntity, RestoreEntity):
         if peer_entity is not None:
             peer_felt_temp_delta = peer_entity.attributes.get("felt_temp_delta")
             if peer_felt_temp_delta is not None:
-                diff = self._felt_temp_delta - float(peer_felt_temp_delta)
+                diff = self.felt_temp_delta - float(peer_felt_temp_delta)
                 # "+=" would be wrong here - tested with Wohnzimmer valves where
                 # the colder turned off earlier
                 # weight with only 0.25 instead of 0.5 (=average)
                 adjusted_felt_temp_delta -= 0.25 * diff
                 #LOGGER.info("%s: Adjusted felt temp delta from %.3f to %.3f",
-                #       self._name, self._felt_temp_delta, adjusted_felt_temp_delta)
+                #       self._name, self.felt_temp_delta, adjusted_felt_temp_delta)
 
         # kd with felt_ratio of 0.5: 0.5 overshoots, 1.0 turns off too early
         # kd with felt_ratio of 0.667: try 0.5
@@ -277,7 +340,7 @@ class ValveCover(CoverEntity, RestoreEntity):
             res = self._valve_actuator.normalize_valve_state()
             res = res or self._temperature_sensor.normalize_thermostat_state()
             if res:
-                self.queue_set_valve(math.ceil(self._sweet_spot), False)
+                self.queue_set_valve(math.ceil(self.sweet_spot), False)
 
     @property
     def peer_entity(self):
@@ -299,16 +362,24 @@ class ValveCover(CoverEntity, RestoreEntity):
                 entities.append(self._home_assistant.states.get(window_sensor_id))
             return entities
 
+    def get_adjusted_target_temperature(
+            self,
+            target_temperature: Union[float, None] = None) -> float:
+        if target_temperature is None:
+            target_temperature = self._target_temperature
+        temperature_adjust_sensor = self._home_assistant.states.get("sensor.temperature_adjust")
+        try:
+            return target_temperature + float(temperature_adjust_sensor.state)
+        except ValueError:
+            LOGGER.warning("%s: target_temperature not a float", self._name)
+        return target_temperature
+
     def update_target_temperature(self) -> None:
         if self._settemp_input is not None:
             target_temperature = float(self._home_assistant.states.get(self._settemp_input).state)
         else:
             target_temperature = self._temperature_sensor.entity_attribute("temperature")
-        temperature_adjust_sensor = self._home_assistant.states.get("sensor.temperature_adjust")
-        try:
-            target_temperature = target_temperature + float(temperature_adjust_sensor.state)
-        except ValueError:
-            LOGGER.warning("%s: target_temperature not a float", self._name)
+        target_temperature = self.get_adjusted_target_temperature(target_temperature)
         if (self._target_temperature >= 0 and
                 abs(self._target_temperature - target_temperature) >= 0.5):
             self._last_valve_adjust_at = utcnow() - timedelta(seconds=self._update_interval)
@@ -321,31 +392,37 @@ class ValveCover(CoverEntity, RestoreEntity):
     def adjust_position(self) -> None:
         # use raw_position instead of position for learning because,
         # e.g. for eurotronic they may differ alot.
-        # update only when last valve change was more than 4 hours ago
+        # update only when not heating to target or last target temp change was more
+        # than 4 hours ago
         if (self._raw_position > 0
-                and utcnow() >= self._last_target_temperature_changed_at + timedelta(hours=4)):
+                and (
+                    not self._heating_until_target_temperature
+                    or utcnow() >= self._last_target_temperature_changed_at +
+                            DELAY_LEARN_AFTER_TEMPERATURE_CHANGE
+                )
+            ):
             combined_fitness = max(
                     0.5,
                     1.0 - abs(self._thermostat_history.slope) - abs(self._real_error))
             learn_weight = 0.00005 * self._update_interval * combined_fitness
 
             sweet_spot_learn_weight = learn_weight
-            self._sweet_spot = (
-               self._sweet_spot * (1.0 - sweet_spot_learn_weight)
+            self.sweet_spot = (
+               self.sweet_spot * (1.0 - sweet_spot_learn_weight)
                + float(self._raw_position) * sweet_spot_learn_weight)
             # sweet_spot_learn_weight = 0.000005 * self._update_interval
-            # if self._sweet_spot < self._raw_position:
-            #     self._sweet_spot = min(40.0, self._sweet_spot * sweet_spot_learn_weight)
+            # if self.sweet_spot < self._raw_position:
+            #     self.sweet_spot = min(40.0, self.sweet_spot * sweet_spot_learn_weight)
             # else:
-            #     self._sweet_spot = max(1.0, self._sweet_spot / sweet_spot_learn_weight)
+            #     self.sweet_spot = max(1.0, self.sweet_spot / sweet_spot_learn_weight)
 
             felt_temp_delta = self._felt_temp - self._temperature_sensor.value
             # felt_temp_delta < 0 will decrease ratio, 0 is 1, > 0 will incrase ratio
             felt_temp_learn_weight = learn_weight * math.exp(felt_temp_delta)
             #felt_temp_learn_weight = learn_weight
             #felt_temp_learn_weight = felt_temp_learn_weight * 100.0 # only temporary: learn faster!
-            self._felt_temp_delta = (
-                self._felt_temp_delta * (1.0 - felt_temp_learn_weight)
+            self.felt_temp_delta = (
+                self.felt_temp_delta * (1.0 - felt_temp_learn_weight)
                 + felt_temp_delta * felt_temp_learn_weight)
 
             LOGGER.info((
@@ -360,7 +437,7 @@ class ValveCover(CoverEntity, RestoreEntity):
                 sweet_spot_learn_weight,
                 felt_temp_learn_weight)
 
-        average_sweet_spot = self._sweet_spot
+        average_sweet_spot = self.sweet_spot
         # peer_entity = self.peer_entity
         # if peer_entity is not None:
         #     peer_sweet_spot = peer_entity.attributes.get("sweet_spot")
@@ -371,7 +448,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         valve_pos = self._position
         new_valve_pos = -1.0
         if self._target_temperature_changed:
-            new_valve_pos = valve_pos - 2.0 * self._error * self._sweet_spot
+            new_valve_pos = valve_pos - 2.0 * self._error * self.sweet_spot
 
         # If it's colder than 0.5 degress from target temperature, enable
         # heating_until_target_temperature
@@ -383,23 +460,25 @@ class ValveCover(CoverEntity, RestoreEntity):
         elif (self._temperature_sensor.value >= self._target_temperature
                 and self._heating_until_target_temperature):
             self._heating_until_target_temperature = False
-            if self._raw_position > self._sweet_spot:
-                LOGGER.info("%s: Reached target temperature after heating. Going to sweet spot %.2f.",
-                        self.name, self._sweet_spot)
-                new_valve_pos = self._sweet_spot
+            if self._raw_position > self.sweet_spot:
+                LOGGER.info("%s: Reached target temperature after heating. "
+                        "Going to sweet spot %.2f.",
+                        self.name, self.sweet_spot)
+                new_valve_pos = self.sweet_spot
             else:
-                LOGGER.info("%s: Reached target temperature after heating but position below sweet spot - performing standard adjust.",
+                LOGGER.info("%s: Reached target temperature after heating but position below"
+                        " sweet spot - performing standard adjust.",
                         self.name)
 
         # If new_valve_pos was not yet set by a special case perform standard adjust
         if new_valve_pos < 0.0:
-            #valve_delta = float(-self._error_exp * self._position_factor * self._sweet_spot)
+            #valve_delta = float(-self._error_exp * self._position_factor * self.sweet_spot)
             valve_delta = float(-self._error_exp * self._position_factor * average_sweet_spot)
             # put valve delta on a logarithmic scale: valve_pos 0=>1, 20=>2
             #valve_delta = valve_delta * math.exp(math.log(2) * valve_pos / 20.0)
             new_valve_pos = valve_pos + valve_delta
 
-        adaptive_max_position = max(10.0, min(self._max_position, self._sweet_spot * 2.0))
+        adaptive_max_position = max(10.0, min(self._max_position, self.sweet_spot * 2.0))
         new_valve_pos = min(adaptive_max_position, max(self._min_position, new_valve_pos))
         # if coming from position 0 directly jump to ratio of sweet spot depending on slope
         if (not self._target_temperature_changed
@@ -410,8 +489,8 @@ class ValveCover(CoverEntity, RestoreEntity):
             slope_factor = 0.75
             new_valve_pos = max(
                     new_valve_pos,
-                    self._sweet_spot * slope_factor * -self._thermostat_history.slope)
-            #new_valve_pos = self._sweet_spot
+                    self.sweet_spot * slope_factor * -self._thermostat_history.slope)
+            #new_valve_pos = self.sweet_spot
             LOGGER.info("%s: Turning on from position 0. Directly go to %.2f.",
                     self.name, new_valve_pos)
 

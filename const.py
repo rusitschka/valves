@@ -5,6 +5,8 @@ DEFAULT_FELT_TEMP_DELTA = 0.0
 DEFAULT_POSITION = -1.0
 DEFAULT_SWEET_SPOT = 10.0
 
+DELAY_LEARN_AFTER_TEMPERATURE_CHANGE = timedelta(hours=4)
+
 DOMAIN = 'valves'
 
 LOGGER = logging.getLogger(__package__)
