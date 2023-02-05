@@ -418,9 +418,9 @@ class ValveCover(CoverEntity, RestoreEntity):
 
             felt_temp_delta = self._felt_temp - self._temperature_sensor.value
             # felt_temp_delta < 0 will decrease ratio, 0 is 1, > 0 will incrase ratio
-            felt_temp_learn_weight = learn_weight * math.exp(felt_temp_delta)
-            #felt_temp_learn_weight = learn_weight
-            #felt_temp_learn_weight = felt_temp_learn_weight * 100.0 # only temporary: learn faster!
+            #felt_temp_learn_weight = learn_weight * math.exp(felt_temp_delta)
+            felt_temp_learn_weight = learn_weight
+            #felt_temp_learn_weight = felt_temp_learn_weight * 100.0 # only temporary: faster!
             self.felt_temp_delta = (
                 self.felt_temp_delta * (1.0 - felt_temp_learn_weight)
                 + felt_temp_delta * felt_temp_learn_weight)
@@ -432,7 +432,7 @@ class ValveCover(CoverEntity, RestoreEntity):
                 self._name,
                 self._real_error,
                 self._thermostat_history.slope,
-                felt_temp_delta,
+                self.felt_temp_delta,
                 learn_weight,
                 sweet_spot_learn_weight,
                 felt_temp_learn_weight)
