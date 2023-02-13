@@ -309,7 +309,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._real_error = round(self._temperature_sensor.value - self._target_temperature, 3)
         self._error = (
             self._felt_temp
-            + self._thermostat_history.slope * 0.5 # kd
+            + max(-0.5, min(0.5, self._thermostat_history.slope * 0.5)) # kd, clamp to +/-0.5
             - self._target_temperature
             - adjusted_felt_temp_delta)
         # make delta exponential, see https://www.wolframalpha.com/input/
