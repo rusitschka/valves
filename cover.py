@@ -253,13 +253,7 @@ class ValveCover(CoverEntity, RestoreEntity):
             LOGGER.info("%s: Position not available", self._name)
             return
 
-        if raw_position == self._raw_position:
-            if (abs(raw_position - math.ceil(self._position) > 10)
-                    and utcnow() > self._raw_position_changed_at + timedelta(minutes=45)):
-                LOGGER.info("%s: Position changed to %.1f because it differs too much from %.1f",
-                        self._name, raw_position, self._position)
-                self._position = raw_position
-        else:
+        if raw_position != self._raw_position:
             if raw_position == math.ceil(self._position):
                 LOGGER.info("%s: Position changed from %.1f to %.1f",
                         self._name, self._raw_position, raw_position)
