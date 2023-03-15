@@ -389,50 +389,61 @@ class ValveCover(CoverEntity, RestoreEntity):
     def adjust_position(self) -> None:
         # use raw_position instead of position for learning because,
         # e.g. for eurotronic they may differ alot.
-        # update only when not heating to target or last target temp change was more
-        # than 4 hours ago
-        if (self._raw_position > 0
-                and (
-                    not self._heating_until_target_temperature
-                    or utcnow() >= self._last_target_temperature_changed_at +
-                            DELAY_LEARN_AFTER_TEMPERATURE_CHANGE
-                )
-            ):
-            combined_fitness = max(
-                    0.5,
-                    1.0 - abs(self._thermostat_history.slope) - abs(self._real_error))
-            learn_weight = 0.00005 * self._update_interval * combined_fitness
-
-            sweet_spot_learn_weight = learn_weight
-            self.sweet_spot = (
-               self.sweet_spot * (1.0 - sweet_spot_learn_weight)
-               + float(self._raw_position) * sweet_spot_learn_weight)
-            # sweet_spot_learn_weight = 0.000005 * self._update_interval
-            # if self.sweet_spot < self._raw_position:
-            #     self.sweet_spot = min(40.0, self.sweet_spot * sweet_spot_learn_weight)
-            # else:
-            #     self.sweet_spot = max(1.0, self.sweet_spot / sweet_spot_learn_weight)
-
+        if self._raw_position > 0:
             felt_temp_delta = self._felt_temp - self._temperature_sensor.value
             # felt_temp_delta < 0 will decrease ratio, 0 is 1, > 0 will incrase ratio
             #felt_temp_learn_weight = learn_weight * math.exp(felt_temp_delta)
-            felt_temp_learn_weight = learn_weight
+            # (felt_temp_delta - self.felt_temp_delta) < 0 will decrease, 0 is 1, > 0 will increase
+            felt_temp_delta_delta = felt_temp_delta - self.felt_temp_delta
+            felt_temp_sigmoid = 1.0 / (1.0 + math.exp(-felt_temp_delta_delta * 3.0))
+            felt_temp_learn_weight = (
+                0.00005
+                * self._update_interval
+                * (1.0 + felt_temp_sigmoid))
+            # default simple method
+            #felt_temp_learn_weight = learn_weight
             #felt_temp_learn_weight = felt_temp_learn_weight * 100.0 # only temporary: faster!
             self.felt_temp_delta = (
                 self.felt_temp_delta * (1.0 - felt_temp_learn_weight)
                 + felt_temp_delta * felt_temp_learn_weight)
-
             LOGGER.info((
-                    "%s: New learn: real_error=%.3f, slope=%.3f, felt_temp_delta=%.3f"
-                    ", learn_weight=%.3f, sweet_spot_learn_weight=%.3f"
+                    "%s: New felt_temp learn: felt_temp_delta=%.3f"
+                    ", felt_temp_delta_delta=%.3f"
+                    ", felt_temp_sigmoid=%.3f"
                     ", felt_temp_learn_weight=%.3f"),
                 self._name,
-                self._real_error,
-                self._thermostat_history.slope,
                 self.felt_temp_delta,
-                learn_weight,
-                sweet_spot_learn_weight,
+                felt_temp_delta_delta,
+                felt_temp_sigmoid,
                 felt_temp_learn_weight)
+
+            # update sweet spot only when not heating to target or last target temp change was more
+            # than 4 hours ago
+            if (not self._heating_until_target_temperature
+                    or utcnow() >= self._last_target_temperature_changed_at +
+                            DELAY_LEARN_AFTER_TEMPERATURE_CHANGE):
+                combined_fitness = max(
+                        0.5,
+                        1.0 - abs(self._thermostat_history.slope) - abs(self._real_error))
+                learn_weight = 0.00005 * self._update_interval * combined_fitness
+
+                sweet_spot_learn_weight = learn_weight
+                self.sweet_spot = (
+                        self.sweet_spot * (1.0 - sweet_spot_learn_weight)
+                        + float(self._raw_position) * sweet_spot_learn_weight)
+                # sweet_spot_learn_weight = 0.000005 * self._update_interval
+                # if self.sweet_spot < self._raw_position:
+                #     self.sweet_spot = min(40.0, self.sweet_spot * sweet_spot_learn_weight)
+                # else:
+                #     self.sweet_spot = max(1.0, self.sweet_spot / sweet_spot_learn_weight)
+                LOGGER.info((
+                        "%s: New sweet spot learn: real_error=%.3f, slope=%.3f"
+                        ", learn_weight=%.3f, sweet_spot_learn_weight=%.3f"),
+                    self._name,
+                    self._real_error,
+                    self._thermostat_history.slope,
+                    learn_weight,
+                    sweet_spot_learn_weight)
 
         average_sweet_spot = self.sweet_spot
         # peer_entity = self.peer_entity
