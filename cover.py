@@ -72,6 +72,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._target_temperature = -1.0
         self._target_temperature_changed = False
         self._target_temperature_configs: dict[float, TargetTemperaturConfig] = {}
+        self._adjusted_felt_temp = -1.0
         self._felt_temp = -1.0
         self._real_error = -1.0
         self._error = -1.0
@@ -223,6 +224,7 @@ class ValveCover(CoverEntity, RestoreEntity):
                 target_temperature_configs_json, indent=2, sort_keys=True)
 
         attributes = {
+            "adjusted_felt_temp": self._adjusted_felt_temp,
             "error_exp": round(self._error_exp, 3),
             "error": round(self._error, 3),
             "felt_temp_delta": round(self.felt_temp_delta, 3),
@@ -301,11 +303,12 @@ class ValveCover(CoverEntity, RestoreEntity):
         # kd with felt_ratio of 0.5: 0.5 overshoots, 1.0 turns off too early
         # kd with felt_ratio of 0.667: try 0.5
         self._real_error = round(self._temperature_sensor.value - self._target_temperature, 3)
-        self._error = (
+        self._adjusted_felt_temp = (
             self._felt_temp
             + max(-0.5, min(0.5, self._thermostat_history.slope * 0.5)) # kd, clamp to +/-0.5
-            - self._target_temperature
             - adjusted_felt_temp_delta)
+        self._error = self._adjusted_felt_temp - self._target_temperature
+
         # make delta exponential, see https://www.wolframalpha.com/input/
         # and https://www.desmos.com/calculator
         # 0.1=>0.1, 0.5=>1.0 => a=0.84, b=1.73
