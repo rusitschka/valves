@@ -428,9 +428,10 @@ class ValveCover(CoverEntity, RestoreEntity):
                 learn_weight = 0.00005 * self._update_interval * combined_fitness
 
                 sweet_spot_learn_weight = learn_weight
-                self.sweet_spot = (
+                # cap sweet spot at half of maximum position
+                self.sweet_spot = min(self._max_position / 2.0,(
                         self.sweet_spot * (1.0 - sweet_spot_learn_weight)
-                        + float(self._raw_position) * sweet_spot_learn_weight)
+                        + float(self._raw_position) * sweet_spot_learn_weight))
                 # sweet_spot_learn_weight = 0.000005 * self._update_interval
                 # if self.sweet_spot < self._raw_position:
                 #     self.sweet_spot = min(40.0, self.sweet_spot * sweet_spot_learn_weight)
@@ -488,17 +489,18 @@ class ValveCover(CoverEntity, RestoreEntity):
 
         adaptive_max_position = max(10.0, min(self._max_position, self.sweet_spot * 2.0))
         new_valve_pos = min(adaptive_max_position, max(self._min_position, new_valve_pos))
-        # if coming from position 0 directly jump to ratio of sweet spot depending on slope
+        # if coming from position 0 directly jump to ratio of sweet spot
+        # (depending on slope disabled for now)
         if (not self._target_temperature_changed
                 and self._position == 0
                 and new_valve_pos > 0
                 and self._thermostat_history.slope < 0):
             # slope factor 1.0 was a too agressive (esp. during night)
-            slope_factor = 0.75
-            new_valve_pos = max(
-                    new_valve_pos,
-                    self.sweet_spot * slope_factor * -self._thermostat_history.slope)
-            #new_valve_pos = self.sweet_spot
+            # slope_factor = 0.75
+            # new_valve_pos = max(
+            #         new_valve_pos,
+            #         self.sweet_spot * slope_factor * -self._thermostat_history.slope)
+            new_valve_pos = self.sweet_spot
             LOGGER.info("%s: Turning on from position 0. Directly go to %.2f.",
                     self.name, new_valve_pos)
 
