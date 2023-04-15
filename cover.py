@@ -3,7 +3,7 @@ import json
 import math
 import random
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, Union
 
 from homeassistant.components.cover import (
@@ -88,6 +88,7 @@ class ValveCover(CoverEntity, RestoreEntity):
         self._next_temp_adjust_at = utcnow()
         self._last_valve_adjust_at = utcnow() - timedelta(seconds=self._update_interval / 2)
         self._last_target_temperature_changed_at = utcnow() - DELAY_LEARN_AFTER_TEMPERATURE_CHANGE
+        self._heating_started_at = datetime.min
         self._heating_until_target_temperature = False
         self._window_open_until = None
         self._window_open_saved_position = -1.0
@@ -394,6 +395,8 @@ class ValveCover(CoverEntity, RestoreEntity):
             self._target_temperature_changed = True
         if self._target_temperature != target_temperature:
             self._target_temperature = target_temperature
+            # ignore heating caused by changed target temperature
+            self._heating_started_at = datetime.min
 
 
     def adjust_position(self) -> None:
@@ -503,14 +506,16 @@ class ValveCover(CoverEntity, RestoreEntity):
         # (depending on slope disabled for now)
         if (not self._target_temperature_changed
                 and self._position == 0
-                and new_valve_pos > 0
-                and self._thermostat_history.slope < 0):
+                and new_valve_pos > 0):
+                #and self._thermostat_history.slope < 0):
+
             # slope factor 1.0 was a too agressive (esp. during night)
             # slope_factor = 0.75
             # new_valve_pos = max(
             #         new_valve_pos,
             #         self.sweet_spot * slope_factor * -self._thermostat_history.slope)
             new_valve_pos = self.sweet_spot
+            self._heating_started_at = utcnow()
             LOGGER.info("%s: Turning on from position 0. Directly go to %.2f.",
                     self.name, new_valve_pos)
 
@@ -521,6 +526,17 @@ class ValveCover(CoverEntity, RestoreEntity):
 
         self._position = new_valve_pos
         if valve_pos_changes:
+            if (new_valve_pos == 0
+                    and self._heating_started_at != datetime.min):
+                heating_duration = utcnow() - self._heating_started_at
+                if heating_duration < timedelta(hours=3):
+                    # if we heated less than 3 hours sweet spot is probably too high
+                    self.sweet_spot = self.sweet_spot * 2.0 / 3.0
+                    LOGGER.info("%s: Heating period too short => decreased sweetspot to %.1f",
+                                self._name,
+                                self.sweet_spot)
+                self._heating_started_at = datetime.min
+
             self.queue_set_valve(math.ceil(new_valve_pos), False)
             LOGGER.info((
                         "%s: queued: "
