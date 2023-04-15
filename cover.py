@@ -245,6 +245,10 @@ class ValveCover(CoverEntity, RestoreEntity):
     def update(self) -> None:
         if (not self._valve_actuator.available or
                 not self._temperature_sensor.available):
+            LOGGER.info("%s: not updating %s %s",
+                        self._name,
+                        self._valve_actuator.available,
+                        self._temperature_sensor.available)
             return
 
         self.normalize_devices_state()

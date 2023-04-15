@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant
 from .valve_actuator_bosch import ValveActuatorBosch
 from .valve_actuator_eurotronic import ValveActuatorEurotronic
 from .valve_actuator_homematic import ValveActuatorHomematic
+from .valve_actuator_homematicip_local import ValveActuatorHomematicIPLocal
 from .valve_actuator_shelly import ValveActuatorShelly
 
 class ValveActuatorProxy:
@@ -67,6 +68,12 @@ class ValveActuatorProxy:
             elif (self.type == "auto" and self.entity_attribute("interface") == "rf"
                     or self.type == "homematic"):
                 self._valve_actuator = ValveActuatorHomematic(
+                        self._home_assistant, self._valve_config)
+            elif (self.type == "auto"
+                    and self.entity_attribute("interface_id") is not None
+                    and self.entity_attribute("interface_id").endswith("-BidCos-RF")
+                    or self.type == "homematicip_local"):
+                self._valve_actuator = ValveActuatorHomematicIPLocal(
                         self._home_assistant, self._valve_config)
             elif self.type == "bosch":
                 self._valve_actuator = ValveActuatorBosch(
