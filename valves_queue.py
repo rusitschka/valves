@@ -3,6 +3,7 @@ import asyncio
 
 from datetime import datetime
 from collections import OrderedDict
+from typing import Union
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import utcnow
@@ -14,8 +15,10 @@ from .const import (
 from .valve_actuator_proxy import ValveActuatorProxy
 
 class ValvesQueue:
-    def __init__(self, hass:HomeAssistant):
+    def __init__(self, hass:HomeAssistant, homematic_duty_cycle_sensor:Union[str, None]):
         self._hass = hass
+        self._homematic_duty_cycle_sensor = homematic_duty_cycle_sensor
+
         self._queue = OrderedDict()
         self._updated_at = utcnow()
         self.update_state()
@@ -71,15 +74,18 @@ class ValvesQueue:
 
     @property
     def duty_cycle_too_high(self):
-        ccu2 = self._hass.states.get("homematic.ccu2")
-        if ccu2 is None:
-            LOGGER.warning("duty_cycle_too_high: ccu2 missing")
+        if self._homematic_duty_cycle_sensor is None:
+            LOGGER.warning("duty_cycle_too_high: homematic_duty_cycle_sensor missing in config")
             return False
-        duty_cycle = ccu2.attributes.get("DutyCycle")
+        homematic_duty_cycle_sensor = self._hass.states.get(self._homematic_duty_cycle_sensor)
+        if homematic_duty_cycle_sensor is None:
+            LOGGER.warning("duty_cycle_too_high: homematic_duty_cycle_sensor does not exist")
+            return False
+        duty_cycle = homematic_duty_cycle_sensor.state
         if duty_cycle is None:
-            LOGGER.warning("duty_cycle_too_high: DutyCycle missing in ccu2")
+            LOGGER.warning("duty_cycle_too_high: homematic_duty_cycle_sensor state is missing")
             return False
-        too_high = int(duty_cycle) > 75
+        too_high = float(duty_cycle) > 75
         if too_high:
             LOGGER.warning("duty cycle too high: %d - don't process queue with keys %s",
                     int(duty_cycle), list(self._queue.keys()))
