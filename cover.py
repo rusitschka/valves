@@ -158,7 +158,8 @@ class ValveCover(CoverEntity, RestoreEntity):
     @sweet_spot.setter
     def sweet_spot(self, value):
         target_temperature_config = self.find_or_initialize_target_temperature_config()
-        target_temperature_config.sweet_spot = value
+        # ensure minimum value
+        target_temperature_config.sweet_spot = max(1.0, value)
 
     def find_best_target_temperature_config(self) -> Union[TargetTemperaturConfig, None]:
         best_target_temperature_delta = 100.0
@@ -410,7 +411,7 @@ class ValveCover(CoverEntity, RestoreEntity):
             felt_temp_delta_delta = felt_temp_delta - self.felt_temp_delta
             felt_temp_sigmoid = 1.0 / (1.0 + math.exp(-felt_temp_delta_delta * 3.0))
             felt_temp_learn_weight = (
-                0.00005
+                0.00002
                 * self._update_interval
                 * (1.0 + felt_temp_sigmoid))
             # default simple method
@@ -438,7 +439,7 @@ class ValveCover(CoverEntity, RestoreEntity):
                 combined_fitness = max(
                         0.5,
                         1.0 - abs(self._thermostat_history.slope) - abs(self._real_error))
-                learn_weight = 0.00005 * self._update_interval * combined_fitness
+                learn_weight = 0.00002 * self._update_interval * combined_fitness
 
                 sweet_spot_learn_weight = learn_weight
                 # cap sweet spot at half of maximum position
@@ -496,11 +497,16 @@ class ValveCover(CoverEntity, RestoreEntity):
         if new_valve_pos < 0.0:
             #valve_delta = float(-self._error_exp * self._position_factor * self.sweet_spot)
             valve_delta = float(-self._error_exp * self._position_factor * average_sweet_spot)
+            # ensure minimum change
+            if valve_delta >= 0:
+                valve_delta = max(0.333, valve_delta)
+            else:
+                valve_delta = min(-0.333, valve_delta)
             # put valve delta on a logarithmic scale: valve_pos 0=>1, 20=>2
             #valve_delta = valve_delta * math.exp(math.log(2) * valve_pos / 20.0)
             new_valve_pos = valve_pos + valve_delta
 
-        adaptive_max_position = max(10.0, min(self._max_position, self.sweet_spot * 2.0))
+        adaptive_max_position = max(5.0, min(self._max_position, self.sweet_spot * 2.0))
         new_valve_pos = min(adaptive_max_position, max(self._min_position, new_valve_pos))
         # if coming from position 0 directly jump to ratio of sweet spot
         # (depending on slope disabled for now)
@@ -531,7 +537,7 @@ class ValveCover(CoverEntity, RestoreEntity):
                 heating_duration = utcnow() - self._heating_started_at
                 if heating_duration < timedelta(hours=3):
                     # if we heated less than 3 hours sweet spot is probably too high
-                    self.sweet_spot = self.sweet_spot * 2.0 / 3.0
+                    self.sweet_spot = self.sweet_spot * 0.67
                     LOGGER.info("%s: Heating period too short => decreased sweetspot to %.1f",
                                 self._name,
                                 self.sweet_spot)

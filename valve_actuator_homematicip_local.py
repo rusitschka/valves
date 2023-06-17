@@ -35,6 +35,7 @@ class ValveActuatorHomematicIPLocal(ValveActuator):
         if self._device_id is None:
             registry = entity_registry.async_get(self._home_assistant)
             entry = registry.async_get(self._entity_name)
+            LOGGER.info("%s: device json %s", self._entity_name, entry.display_json_repr)
             self._device_id = entry.device_id
             LOGGER.info("%s: Got device_id %s",
                     self._entity_name, self._device_id)
