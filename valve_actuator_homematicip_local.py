@@ -48,11 +48,13 @@ class ValveActuatorHomematicIPLocal(ValveActuator):
             },
             "rx_mode": "BURST" if urgent else "WAKEUP"
         }
-        return await self._home_assistant.services.async_call(
+        resp = await self._home_assistant.services.async_call(
                 "homematicip_local",
                 "put_paramset",
                 data,
                 blocking=True)
+        LOGGER.info("%s: Got resp %s", self._entity_name, resp)
+        return True
 
     def normalize_valve_state(self) -> bool:
         if not self.available:

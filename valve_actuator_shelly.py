@@ -1,6 +1,7 @@
 
 from typing import Union
 
+from .const import LOGGER
 from .valve_actuator import ValveActuator
 
 class ValveActuatorShelly(ValveActuator):
@@ -24,10 +25,15 @@ class ValveActuatorShelly(ValveActuator):
         valve_position_id = self._valve_config.get("valve_position", None)
         if valve_position_id is None:
             raise ValueError("valve_position missing in config!")
-        return await self._home_assistant.services.async_call("number", "set_value", {
-            'entity_id': valve_position_id,
-            'value': value
-        }, blocking=True)
+        resp =  await self._home_assistant.services.async_call(
+            "number",
+            "set_value", {
+                'entity_id': valve_position_id,
+                'value': value
+            },
+            blocking=True)
+        LOGGER.info("%s: Got resp %s", self._entity_name, resp)
+        return True
 
     def normalize_valve_state(self) -> bool:
         # Nothing to normalize for Shelly

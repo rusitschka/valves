@@ -1,6 +1,7 @@
 
 from typing import Union
 
+from .const import LOGGER
 from .valve_actuator import ValveActuator
 
 class ValveActuatorHomematic(ValveActuator):
@@ -25,11 +26,13 @@ class ValveActuatorHomematic(ValveActuator):
             },
             "rx_mode": "BURST" if urgent else "WAKEUP"
         }
-        return await self._home_assistant.services.async_call(
+        resp = await self._home_assistant.services.async_call(
                 "homematic",
                 "put_paramset",
                 data,
                 blocking=True)
+        LOGGER.info("%s: Got resp %s", self._entity_name, resp)
+        return True
 
     def normalize_valve_state(self) -> bool:
         if not self.available:
