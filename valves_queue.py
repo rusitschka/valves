@@ -88,7 +88,7 @@ class ValvesQueue:
         too_high = float(duty_cycle) > 75
         if too_high:
             LOGGER.warning("duty cycle too high: %d - don't process queue with keys %s",
-                    int(duty_cycle), list(self._queue.keys()))
+                    float(duty_cycle), list(self._queue.keys()))
         return too_high
 
     @property
