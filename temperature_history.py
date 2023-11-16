@@ -57,7 +57,12 @@ class TemperatureHistory:
 
     @property
     def slope(self) -> float:
-        return (self._value - self._last_value) * 3600.0 / self._history_timedelta.total_seconds()
+        last_update_age_in_seconds = (utcnow() - self._last_updated_at).total_seconds()
+        # If there was no update for one hour, set slope to 0
+        if last_update_age_in_seconds > 3600:
+            return 0
+        else:
+            return (self._value - self._last_value) * 3600.0 / self._history_timedelta.total_seconds()
 
     def reset(self) -> None:
         self._history.clear()

@@ -403,7 +403,8 @@ class ValveCover(CoverEntity, RestoreEntity):
     def adjust_position(self) -> None:
         # use raw_position instead of position for learning because,
         # e.g. for eurotronic they may differ alot.
-        if self._raw_position > 0:
+        # also only learn when valve is becoming warmer
+        if self._raw_position > 0 and self._valve_history.slope > 0:
             felt_temp_delta = self._felt_temp - self._temperature_sensor.value
             # felt_temp_delta < 0 will decrease ratio, 0 is 1, > 0 will incrase ratio
             #felt_temp_learn_weight = learn_weight * math.exp(felt_temp_delta)
